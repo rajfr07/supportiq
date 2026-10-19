@@ -1,7 +1,7 @@
 const API_BASE_URL = "http://127.0.0.1:8000";
 
 async function request(endpoint, options = {}) {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const response = await fetch(`${API_BASE_URL}${endpoint} `, {
         headers: {
             "Content-Type": "application/json",
             ...options.headers,
@@ -11,7 +11,7 @@ async function request(endpoint, options = {}) {
 
     if (!response.ok) {
         const error = await response.text();
-        throw new Error(error || `Request failed: ${response.status}`);
+        throw new Error(error || `Request failed: ${response.status} `);
     }
 
     return response.json();
@@ -37,11 +37,18 @@ export const api = {
         }),
 
     closeTicket: (id) =>
-        request(`/tickets/${id}/close`, {
+        request(`/ tickets / ${id}/close`, {
             method: "PATCH",
         }),
 
     getStats: () => request("/dashboard/stats"),
 
     health: () => request("/health"),
+
+    classifyTicket: (ticket) =>
+        request("/ai/classify", {
+            method: "POST",
+            body: JSON.stringify(ticket),
+        }),
 };
+

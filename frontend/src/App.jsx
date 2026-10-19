@@ -2,29 +2,22 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertCircle,
-  ArrowDownRight,
-  ArrowUpRight,
   BarChart3,
-  Bell,
+  Check,
   CheckCircle2,
-  ChevronDown,
-  CircleHelp,
+  ChevronRight,
   Clock3,
   Headphones,
   LayoutDashboard,
   LoaderCircle,
-  LogOut,
   Menu,
   MessageSquare,
   Plus,
   RefreshCw,
   Search,
-  Send,
   Settings,
   ShieldCheck,
-  SlidersHorizontal,
   Ticket,
-  TrendingUp,
   X,
 } from "lucide-react";
 import {
@@ -42,7 +35,7 @@ import {
 import { api } from "./api";
 import "./App.css";
 
-const CATEGORY_OPTIONS = [
+const CATEGORIES = [
   "Billing",
   "Technical Support",
   "Account Access",
@@ -51,11 +44,29 @@ const CATEGORY_OPTIONS = [
   "Other",
 ];
 
-const PRIORITY_COLORS = {
-  high: "#e05b63",
-  medium: "#e5a443",
-  low: "#39a98b",
+const COLORS = {
+  high: "#b7473d",
+  medium: "#a66b24",
+  low: "#176b56",
 };
+
+const CATEGORY_COLORS = [
+  "#176b56",
+  "#c18a43",
+  "#557eaa",
+  "#a76b60",
+  "#7b75a8",
+  "#89918a",
+];
+
+const NAVIGATION = [
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "tickets", label: "All tickets", icon: Ticket },
+  { id: "open", label: "Open tickets", icon: Clock3 },
+  { id: "resolved", label: "Resolved", icon: CheckCircle2 },
+  { id: "analytics", label: "Analytics", icon: BarChart3 },
+  { id: "settings", label: "Settings", icon: Settings },
+];
 
 function formatDate(value) {
   if (!value) return "—";
@@ -71,85 +82,92 @@ function formatDate(value) {
   });
 }
 
-function getInitials(value = "Support User") {
-  return value
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0].toUpperCase())
-    .join("");
+function formatDateTime(value) {
+  if (!value) return "Not available";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "Not available";
+
+  return date.toLocaleString("en-IN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 }
 
-function StatusBadge({ status }) {
-  const closed = status === "closed";
-
-  return (
-    <span className={`status-badge ${closed ? "status-closed" : "status-open"}`}>
-      <span className="status-dot" />
-      {closed ? "Closed" : "Open"}
-    </span>
-  );
+function Badge({ children, type = "neutral" }) {
+  return <span className={`app-badge app-badge-${type}`}>{children}</span>;
 }
 
-function PriorityBadge({ priority }) {
+function Metric({ label, value, detail, icon: Icon }) {
   return (
-    <span className={`priority-badge priority-${priority || "medium"}`}>
-      <span className="priority-dot" />
-      {(priority || "medium").charAt(0).toUpperCase() +
-        (priority || "medium").slice(1)}
-    </span>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  color,
-  description,
-  trendIcon: TrendIcon,
-}) {
-  return (
-    <article className="stat-card">
-      <div className="stat-card-top">
-        <span className="stat-label">{label}</span>
-        <span className={`stat-icon ${color}`}>
-          <Icon size={19} />
-        </span>
+    <article className="app-metric">
+      <div className="app-metric-heading">
+        <span>{label}</span>
+        <Icon size={18} />
       </div>
-
-      <div className="stat-value">{value}</div>
-
-      <div className="stat-description">
-        {TrendIcon && <TrendIcon size={14} />}
-        <span>{description}</span>
-      </div>
+      <strong>{value}</strong>
+      <p>{detail}</p>
     </article>
   );
 }
 
-function TicketModal({ onClose, onCreate, submitting }) {
+function TicketForm({ onClose, onCreate, submitting }) {
   const [form, setForm] = useState({
     title: "",
     description: "",
     priority: "medium",
-    category: "Technical Support",
+    category: "",
   });
 
   const [formError, setFormError] = useState("");
+  const [prediction, setPrediction] = useState(null);
+  const [classifying, setClassifying] = useState(false);
+  const [classificationError, setClassificationError] = useState("");
 
-  function updateField(event) {
+  function update(event) {
     const { name, value } = event.target;
-
-    setForm((current) => ({
-      ...current,
-      [name]: value,
-    }));
+    setForm((current) => ({ ...current, [name]: value }));
+    setPrediction(null);
+    setClassificationError("");
   }
 
-  async function handleSubmit(event) {
+  async function previewClassification() {
+    if (form.title.trim().length < 3 || !form.description.trim()) {
+      setClassificationError(
+        "Enter a subject and description to classify the ticket."
+      );
+      setPrediction(null);
+      return;
+    }
+
+
+    setClassifying(true);
+    setClassificationError("");
+    setPrediction(null);
+
+    try {
+      const result = await api.classifyTicket({
+        title: form.title.trim(),
+        description: form.description.trim(),
+      });
+
+      setPrediction(result);
+    } catch (error) {
+      setClassificationError(
+        error.message || "Unable to classify this ticket."
+      );
+    } finally {
+      setClassifying(false);
+    }
+
+
+  }
+
+  async function submit(event) {
     event.preventDefault();
     setFormError("");
+
 
     if (form.title.trim().length < 3) {
       setFormError("The title must contain at least 3 characters.");
@@ -163,16 +181,17 @@ function TicketModal({ onClose, onCreate, submitting }) {
 
     try {
       await onCreate({
+        ...form,
         title: form.title.trim(),
         description: form.description.trim(),
-        priority: form.priority,
-        category: form.category,
       });
 
       onClose();
     } catch (error) {
       setFormError(error.message || "Unable to create the ticket.");
     }
+
+
   }
 
   return (
@@ -181,38 +200,31 @@ function TicketModal({ onClose, onCreate, submitting }) {
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
-    >
-      <section
-        className="ticket-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="modal-title"
-      >
-        <div className="modal-heading">
-          <div>
-            <span className="eyebrow">CUSTOMER SUPPORT</span>
-            <h2 id="modal-title">Create new ticket</h2>
-            <p>Add a customer issue to your support queue.</p>
-          </div>
+    > <section
+      className="ticket-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="create-ticket-heading"
+    > <div className="modal-heading"> <div> <span className="eyebrow">SUPPORT OPERATIONS</span> <h2 id="create-ticket-heading">New ticket</h2> <p>Add a customer request to your support queue.</p> </div>
 
           <button
             type="button"
             className="icon-button"
             onClick={onClose}
-            aria-label="Close dialog"
+            aria-label="Close"
           >
             <X size={20} />
           </button>
         </div>
 
-        <form className="ticket-form" onSubmit={handleSubmit}>
+        <form className="ticket-form" onSubmit={submit}>
           <label>
-            Ticket title
+            Subject
             <input
               name="title"
               value={form.title}
-              onChange={updateField}
-              placeholder="e.g. Unable to complete payment"
+              onChange={update}
+              placeholder="What does the customer need help with?"
               maxLength={200}
               required
             />
@@ -223,21 +235,65 @@ function TicketModal({ onClose, onCreate, submitting }) {
             <textarea
               name="description"
               value={form.description}
-              onChange={updateField}
-              placeholder="Describe the issue and any relevant details..."
-              rows={4}
+              onChange={update}
+              placeholder="Include the relevant details..."
+              rows={5}
               required
             />
           </label>
 
+          <div className="ai-classification-panel">
+            <div>
+              <span className="eyebrow">SUPPORTIQ AI</span>
+              <h3>Automatic ticket classification</h3>
+              <p>
+                Predict the support category from the subject and description.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className="button button-secondary"
+              onClick={previewClassification}
+              disabled={classifying}
+            >
+              {classifying ? (
+                <LoaderCircle size={16} className="spin" />
+              ) : (
+                <Activity size={16} />
+              )}
+              {classifying ? "Analysing..." : "Predict category"}
+            </button>
+
+            {prediction && (
+              <div className="ai-prediction-result">
+                <CheckCircle2 size={18} />
+                <div>
+                  <strong>Predicted category: {prediction.category}</strong>
+                  <p>
+                    Matched keywords:{" "}
+                    {Array.isArray(prediction.matched_keywords) &&
+                      prediction.matched_keywords.length
+                      ? prediction.matched_keywords.join(", ")
+                      : "No matching keywords"}
+                  </p>
+                  <p>Classification method: Keyword-based baseline</p>
+                </div>
+              </div>
+            )}
+
+            {classificationError && (
+              <div className="form-error">
+                <AlertCircle size={16} />
+                {classificationError}
+              </div>
+            )}
+          </div>
+
           <div className="form-row">
             <label>
               Priority
-              <select
-                name="priority"
-                value={form.priority}
-                onChange={updateField}
-              >
+              <select name="priority" value={form.priority} onChange={update}>
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
@@ -246,12 +302,9 @@ function TicketModal({ onClose, onCreate, submitting }) {
 
             <label>
               Category
-              <select
-                name="category"
-                value={form.category}
-                onChange={updateField}
-              >
-                {CATEGORY_OPTIONS.map((category) => (
+              <select name="category" value={form.category} onChange={update}>
+                <option value="">AI auto-detect</option>
+                {CATEGORIES.map((category) => (
                   <option key={category} value={category}>
                     {category}
                   </option>
@@ -263,7 +316,7 @@ function TicketModal({ onClose, onCreate, submitting }) {
           {formError && (
             <div className="form-error">
               <AlertCircle size={16} />
-              <span>{formError}</span>
+              {formError}
             </div>
           )}
 
@@ -282,9 +335,9 @@ function TicketModal({ onClose, onCreate, submitting }) {
               disabled={submitting}
             >
               {submitting ? (
-                <LoaderCircle className="spin" size={17} />
+                <LoaderCircle size={16} className="spin" />
               ) : (
-                <Plus size={17} />
+                <Plus size={16} />
               )}
               Create ticket
             </button>
@@ -292,6 +345,252 @@ function TicketModal({ onClose, onCreate, submitting }) {
         </form>
       </section>
     </div>
+
+
+  );
+}
+
+
+function TicketDetails({ ticket, onClose, onResolve, resolving }) {
+  if (!ticket) return null;
+
+  return (
+    <div className="modal-backdrop" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose();
+    }}>
+      <section
+        className="ticket-modal ticket-detail-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ticket-detail-heading"
+      >
+        <div className="modal-heading">
+          <div>
+            <span className="eyebrow">TICKET #{ticket.id}</span>
+            <h2 id="ticket-detail-heading">{ticket.title}</h2>
+            <p>Created {formatDateTime(ticket.created_at)}</p>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Close">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="ticket-detail-badges">
+          <Badge type={ticket.status === "closed" ? "green" : "orange"}>
+            {ticket.status === "closed" ? "Resolved" : "Open"}
+          </Badge>
+          <Badge type={ticket.priority || "neutral"}>
+            {ticket.priority || "Medium"} priority
+          </Badge>
+          <Badge>{ticket.category || "Uncategorized"}</Badge>
+        </div>
+
+        <div className="ticket-description">
+          <h3>Issue description</h3>
+          <p>{ticket.description || "No description provided."}</p>
+        </div>
+
+        {ticket.closed_at && (
+          <p className="ticket-resolved-date">
+            Resolved on {formatDateTime(ticket.closed_at)}
+          </p>
+        )}
+
+        <div className="modal-actions">
+          <button
+            className="button button-secondary"
+            onClick={onClose}
+          >
+            Close window
+          </button>
+          {ticket.status === "open" && (
+            <button
+              className="button button-primary"
+              disabled={resolving}
+              onClick={() => onResolve(ticket.id)}
+            >
+              {resolving ? (
+                <LoaderCircle size={16} className="spin" />
+              ) : (
+                <Check size={16} />
+              )}
+              Mark resolved
+            </button>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TicketTable({
+  tickets,
+  loading,
+  search,
+  setSearch,
+  statusFilter,
+  setStatusFilter,
+  priorityFilter,
+  setPriorityFilter,
+  categoryFilter,
+  setCategoryFilter,
+  onSelect,
+  onResolve,
+  resolvingId,
+  onCreate,
+  showFilters = true,
+}) {
+  return (
+    <>
+      <div className="app-ticket-toolbar">
+        <div className="app-search">
+          <Search size={17} />
+          <input
+            type="search"
+            placeholder="Search tickets, IDs or descriptions..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          {search && (
+            <button onClick={() => setSearch("")} aria-label="Clear search">
+              <X size={15} />
+            </button>
+          )}
+        </div>
+
+        {showFilters && (
+          <div className="app-filters">
+            <select
+              aria-label="Filter by status"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+            >
+              <option value="all">All statuses</option>
+              <option value="open">Open</option>
+              <option value="closed">Resolved</option>
+            </select>
+
+            <select
+              aria-label="Filter by priority"
+              value={priorityFilter}
+              onChange={(event) => setPriorityFilter(event.target.value)}
+            >
+              <option value="all">All priorities</option>
+              <option value="high">High priority</option>
+              <option value="medium">Medium priority</option>
+              <option value="low">Low priority</option>
+            </select>
+
+            <select
+              aria-label="Filter by category"
+              value={categoryFilter}
+              onChange={(event) => setCategoryFilter(event.target.value)}
+            >
+              <option value="all">All categories</option>
+              {CATEGORIES.map((category) => (
+                <option key={category}>{category}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      <div className="table-wrapper">
+        <table className="tickets-table app-ticket-table">
+          <thead>
+            <tr>
+              <th>SUBJECT</th>
+              <th>CATEGORY</th>
+              <th>PRIORITY</th>
+              <th>STATUS</th>
+              <th>CREATED</th>
+              <th>ACTION</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan="6" className="table-message">
+                  <LoaderCircle size={22} className="spin" />
+                  Loading tickets...
+                </td>
+              </tr>
+            ) : tickets.length === 0 ? (
+              <tr>
+                <td colSpan="6" className="table-message">
+                  <MessageSquare size={24} />
+                  <strong>No tickets found</strong>
+                  <span>Try adjusting your filters or create a ticket.</span>
+                  <button
+                    className="button button-primary empty-create-button"
+                    onClick={onCreate}
+                  >
+                    <Plus size={16} />
+                    New ticket
+                  </button>
+                </td>
+              </tr>
+            ) : (
+              tickets.map((ticket) => (
+                <tr key={ticket.id}>
+                  <td>
+                    <button
+                      type="button"
+                      className="app-ticket-subject"
+                      onClick={() => onSelect(ticket)}
+                    >
+                      <span className="app-ticket-id">#{ticket.id}</span>
+                      <strong>{ticket.title}</strong>
+                      <span className="app-ticket-description">
+                        {(ticket.description || "").slice(0, 70)}
+                        {(ticket.description || "").length > 70 ? "…" : ""}
+                      </span>
+                    </button>
+                  </td>
+                  <td>
+                    <span className="category-tag">
+                      {ticket.category || "Uncategorized"}
+                    </span>
+                  </td>
+                  <td>
+                    <Badge type={ticket.priority || "medium"}>
+                      {ticket.priority || "Medium"}
+                    </Badge>
+                  </td>
+                  <td>
+                    <Badge type={ticket.status === "closed" ? "green" : "orange"}>
+                      {ticket.status === "closed" ? "Resolved" : "Open"}
+                    </Badge>
+                  </td>
+                  <td className="date-cell">{formatDate(ticket.created_at)}</td>
+                  <td>
+                    {ticket.status === "open" ? (
+                      <button
+                        type="button"
+                        className="close-ticket-button"
+                        disabled={resolvingId === ticket.id}
+                        onClick={() => onResolve(ticket.id)}
+                      >
+                        {resolvingId === ticket.id ? (
+                          <LoaderCircle size={15} className="spin" />
+                        ) : (
+                          <CheckCircle2 size={15} />
+                        )}
+                        Resolve
+                      </button>
+                    ) : (
+                      <span className="completed-action">
+                        <CheckCircle2 size={16} /> Done
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
@@ -299,26 +598,28 @@ export default function App() {
   const [tickets, setTickets] = useState([]);
   const [stats, setStats] = useState(null);
 
+  const [activePage, setActivePage] = useState("overview");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
 
-  const [activePage, setActivePage] = useState("overview");
-  const [showModal, setShowModal] = useState(false);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [closingId, setClosingId] = useState(null);
+  const [resolvingId, setResolvingId] = useState(null);
 
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [notice, setNotice] = useState("");
+  const [compactMode, setCompactMode] = useState(false);
+  const [showDescriptions, setShowDescriptions] = useState(true);
 
   const loadData = useCallback(async (showLoader = true) => {
     if (showLoader) setLoading(true);
-
     setError("");
 
     try {
@@ -327,13 +628,13 @@ export default function App() {
         api.getStats(),
       ]);
 
-      setTickets(ticketData);
+      setTickets(Array.isArray(ticketData) ? ticketData : []);
       setStats(statsData);
     } catch (requestError) {
-      setError(
-        "Unable to connect to the backend. Check that FastAPI is running on port 8000."
-      );
       console.error(requestError);
+      setError(
+        "Unable to load data. Check that FastAPI is running on port 8000."
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -345,12 +646,10 @@ export default function App() {
   }, [loadData]);
 
   useEffect(() => {
-    if (!success) return undefined;
-
-    const timer = setTimeout(() => setSuccess(""), 3500);
-
+    if (!notice) return undefined;
+    const timer = setTimeout(() => setNotice(""), 3500);
     return () => clearTimeout(timer);
-  }, [success]);
+  }, [notice]);
 
   const filteredTickets = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -372,128 +671,140 @@ export default function App() {
       const matchesCategory =
         categoryFilter === "all" || ticket.category === categoryFilter;
 
+      const matchesPage =
+        activePage === "open"
+          ? ticket.status === "open"
+          : activePage === "resolved"
+            ? ticket.status === "closed"
+            : true;
+
       return (
         matchesSearch &&
         matchesStatus &&
         matchesPriority &&
-        matchesCategory
+        matchesCategory &&
+        matchesPage
       );
     });
-  }, [tickets, search, statusFilter, priorityFilter, categoryFilter]);
+  }, [
+    tickets,
+    search,
+    statusFilter,
+    priorityFilter,
+    categoryFilter,
+    activePage,
+  ]);
 
-  const openTickets = tickets.filter(
-    (ticket) => ticket.status === "open"
+  const openCount = tickets.filter((ticket) => ticket.status === "open").length;
+  const closedCount = tickets.filter((ticket) => ticket.status === "closed").length;
+  const highCount = tickets.filter(
+    (ticket) => ticket.status === "open" && ticket.priority === "high"
   ).length;
 
-  const closedTickets = tickets.filter(
-    (ticket) => ticket.status === "closed"
-  ).length;
-
-  const highPriorityTickets = tickets.filter(
-    (ticket) => ticket.priority === "high" && ticket.status === "open"
-  ).length;
-
+  const totalCount = stats?.total_tickets ?? tickets.length;
   const categoryData = Object.entries(stats?.tickets_by_category || {}).map(
     ([name, value]) => ({ name, value })
   );
 
   const priorityData = ["high", "medium", "low"].map((priority) => ({
     name: priority.charAt(0).toUpperCase() + priority.slice(1),
-    tickets: stats?.tickets_by_priority?.[priority] || 0,
-    color: PRIORITY_COLORS[priority],
+    tickets: stats?.tickets_by_priority?.[priority] ?? 0,
+    color: COLORS[priority],
   }));
 
-  async function handleCreateTicket(ticket) {
+  const pageInfo = {
+    overview: {
+      title: "Overview",
+      description: "A clear view of your customer support operations.",
+    },
+    tickets: {
+      title: "All tickets",
+      description: "Search, review and manage every customer request.",
+    },
+    open: {
+      title: "Open tickets",
+      description: "Requests that still need your team's attention.",
+    },
+    resolved: {
+      title: "Resolved tickets",
+      description: "A record of customer requests that have been closed.",
+    },
+    analytics: {
+      title: "Analytics",
+      description: "Explore ticket volume, categories and priority distribution.",
+    },
+    settings: {
+      title: "Settings",
+      description: "Personalize your SupportIQ workspace.",
+    },
+  }[activePage];
+
+  function navigate(page) {
+    setActivePage(page);
+    setMobileOpen(false);
+    setSearch("");
+    setStatusFilter("all");
+    setPriorityFilter("all");
+    setCategoryFilter("all");
+  }
+
+  async function createTicket(ticket) {
     setSubmitting(true);
+    setError("");
 
     try {
       await api.createTicket(ticket);
-      setSuccess("Ticket created successfully.");
       await loadData(false);
-    } catch (requestError) {
-      throw requestError;
+      setNotice("Ticket created successfully.");
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleCloseTicket(ticketId) {
-    setClosingId(ticketId);
+  async function resolveTicket(id) {
+    setResolvingId(id);
     setError("");
 
     try {
-      await api.closeTicket(ticketId);
-      setSuccess(`Ticket #${ticketId} closed successfully.`);
+      await api.closeTicket(id);
+      setSelectedTicket(null);
       await loadData(false);
+      setNotice(`Ticket #${id} has been resolved.`);
     } catch (requestError) {
-      setError(
-        requestError.message || `Unable to close ticket #${ticketId}.`
-      );
+      setError(requestError.message || `Unable to resolve ticket #${id}.`);
     } finally {
-      setClosingId(null);
+      setResolvingId(null);
     }
   }
 
-  function navigate(page) {
-    setActivePage(page);
-    setMobileSidebarOpen(false);
-
-    if (page === "overview") {
-      setStatusFilter("all");
-    }
-
-    if (page === "tickets") {
-      setStatusFilter("all");
-    }
-
-    if (page === "open") {
-      setStatusFilter("open");
-    }
-
-    if (page === "resolved") {
-      setStatusFilter("closed");
-    }
+  function refresh() {
+    setRefreshing(true);
+    loadData(false);
   }
-
-  const pageTitle =
-    activePage === "overview"
-      ? "Dashboard overview"
-      : activePage === "open"
-        ? "Open tickets"
-        : activePage === "resolved"
-          ? "Resolved tickets"
-          : activePage === "tickets"
-            ? "All tickets"
-            : activePage === "analytics"
-              ? "Analytics"
-              : "Settings";
 
   return (
-    <div className="app-shell">
-      {mobileSidebarOpen && (
+    <div className={`app-shell ${compactMode ? "app-compact" : ""}`}>
+      {mobileOpen && (
         <button
           type="button"
           className="mobile-overlay"
           aria-label="Close navigation"
-          onClick={() => setMobileSidebarOpen(false)}
+          onClick={() => setMobileOpen(false)}
         />
       )}
 
-      <aside className={`sidebar ${mobileSidebarOpen ? "sidebar-mobile-open" : ""}`}>
+      <aside className={`sidebar ${mobileOpen ? "sidebar-mobile-open" : ""} `}>
         <div className="brand">
           <div className="brand-mark">
-            <Headphones size={23} strokeWidth={2.4} />
+            <Headphones size={22} />
           </div>
-
           <div className="brand-copy">
             <strong>supportiq</strong>
-            <span>SUPPORT INTELLIGENCE</span>
+            <span>SUPPORT OPERATIONS</span>
           </div>
-
           <button
-            type="button"
             className="mobile-close icon-button"
-            onClick={() => setMobileSidebarOpen(false)}
+            onClick={() => setMobileOpen(false)}
             aria-label="Close navigation"
           >
             <X size={19} />
@@ -502,67 +813,35 @@ export default function App() {
 
         <div className="workspace-switcher">
           <div className="workspace-avatar">S</div>
-
           <div className="workspace-copy">
             <strong>Support workspace</strong>
             <span>Customer operations</span>
           </div>
-
-          <ChevronDown size={16} className="muted-icon" />
         </div>
 
         <div className="sidebar-section-label">WORKSPACE</div>
 
         <nav className="sidebar-nav">
-          <button
-            type="button"
-            className={`nav-item ${activePage === "overview" ? "nav-item-active" : ""}`}
-            onClick={() => navigate("overview")}
-          >
-            <LayoutDashboard size={18} />
-            <span>Overview</span>
-          </button>
-
-          <button
-            type="button"
-            className={`nav-item ${activePage === "tickets" ? "nav-item-active" : ""}`}
-            onClick={() => navigate("tickets")}
-          >
-            <Ticket size={18} />
-            <span>All tickets</span>
-            <span className="nav-count">{tickets.length}</span>
-          </button>
-
-          <button
-            type="button"
-            className={`nav-item ${activePage === "open" ? "nav-item-active" : ""}`}
-            onClick={() => navigate("open")}
-          >
-            <Clock3 size={18} />
-            <span>Open tickets</span>
-            {openTickets > 0 && <span className="nav-count">{openTickets}</span>}
-          </button>
-
-          <button
-            type="button"
-            className={`nav-item ${activePage === "resolved" ? "nav-item-active" : ""}`}
-            onClick={() => navigate("resolved")}
-          >
-            <CheckCircle2 size={18} />
-            <span>Resolved</span>
-          </button>
-
-          <button
-            type="button"
-            className={`nav-item ${activePage === "analytics" ? "nav-item-active" : ""}`}
-            onClick={() => navigate("analytics")}
-          >
-            <BarChart3 size={18} />
-            <span>Analytics</span>
-          </button>
+          {NAVIGATION.slice(0, 5).map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              type="button"
+              className={`nav-item ${activePage === id ? "nav-item-active" : ""}`}
+              onClick={() => navigate(id)}
+            >
+              <Icon size={18} />
+              <span>{label}</span>
+              {id === "tickets" && (
+                <span className="nav-count">{tickets.length}</span>
+              )}
+              {id === "open" && openCount > 0 && (
+                <span className="nav-count">{openCount}</span>
+              )}
+            </button>
+          ))}
         </nav>
 
-        <div className="sidebar-section-label tools-label">TOOLS</div>
+        <div className="sidebar-section-label tools-label">PREFERENCES</div>
 
         <nav className="sidebar-nav">
           <button
@@ -573,13 +852,12 @@ export default function App() {
             <Settings size={18} />
             <span>Settings</span>
           </button>
-
           <button
             type="button"
             className="nav-item"
             onClick={() => window.open("http://127.0.0.1:8000/docs", "_blank")}
           >
-            <CircleHelp size={18} />
+            <ShieldCheck size={18} />
             <span>API documentation</span>
           </button>
         </nav>
@@ -588,34 +866,21 @@ export default function App() {
 
         <div className="sidebar-help">
           <div className="help-icon">
-            <ShieldCheck size={21} />
+            <MessageSquare size={20} />
           </div>
-
-          <strong>Your support, simplified.</strong>
-
-          <p>Keep customer conversations organized and your team in control.</p>
-
-          <button type="button" onClick={() => setShowModal(true)}>
-            Create a ticket <ArrowUpRight size={14} />
+          <strong>Every request matters.</strong>
+          <p>Keep customer issues organized and visible.</p>
+          <button type="button" onClick={() => setShowCreate(true)}>
+            Create a ticket <ChevronRight size={15} />
           </button>
         </div>
 
         <div className="sidebar-profile">
-          <div className="profile-avatar">RA</div>
-
+          <div className="profile-avatar">SA</div>
           <div className="profile-copy">
             <strong>Support Admin</strong>
-            <span>Administrator</span>
+            <span>Workspace administrator</span>
           </div>
-
-          <button
-            type="button"
-            className="icon-button logout-button"
-            aria-label="Account menu"
-            onClick={() => setSuccess("You are signed in as Support Admin.")}
-          >
-            <LogOut size={17} />
-          </button>
         </div>
       </aside>
 
@@ -623,38 +888,27 @@ export default function App() {
         <header className="topbar">
           <div className="topbar-left">
             <button
-              type="button"
               className="mobile-menu icon-button"
-              onClick={() => setMobileSidebarOpen(true)}
+              onClick={() => setMobileOpen(true)}
               aria-label="Open navigation"
             >
               <Menu size={21} />
             </button>
-
             <div className="breadcrumb">
-              <span>Workspace</span>
+              <span>SupportIQ</span>
               <span className="breadcrumb-separator">/</span>
-              <strong>{pageTitle}</strong>
+              <strong>{pageInfo.title}</strong>
             </div>
           </div>
 
           <div className="topbar-actions">
             <div className="system-status">
-              <span className={`system-status-dot ${error ? "system-status-error" : ""}`} />
-              {error ? "Connection issue" : "System operational"}
+              <span
+                className={`system-status-dot ${error ? "system-status-error" : ""}`}
+              />
+              {error ? "Connection issue" : "Workspace"}
             </div>
-
-            <button
-              type="button"
-              className="icon-button notification-button"
-              aria-label="Notifications"
-              onClick={() => setSuccess("You're all caught up on notifications.")}
-            >
-              <Bell size={19} />
-              <span className="notification-dot" />
-            </button>
-
-            <div className="topbar-avatar">RA</div>
+            <div className="topbar-avatar">SA</div>
           </div>
         </header>
 
@@ -665,32 +919,22 @@ export default function App() {
                 <span className="live-dot" />
                 CUSTOMER OPERATIONS
               </div>
-
-              <h1>{pageTitle}</h1>
-
-              <p className="welcome-subtitle">
-                Here's what's happening with your customer support today.
-              </p>
+              <h1>{pageInfo.title}</h1>
+              <p className="welcome-subtitle">{pageInfo.description}</p>
             </div>
 
             <div className="welcome-actions">
               <button
-                type="button"
                 className="button button-secondary refresh-button"
-                onClick={() => {
-                  setRefreshing(true);
-                  loadData(false);
-                }}
+                onClick={refresh}
                 disabled={refreshing}
               >
                 <RefreshCw size={16} className={refreshing ? "spin" : ""} />
                 Refresh
               </button>
-
               <button
-                type="button"
                 className="button button-primary"
-                onClick={() => setShowModal(true)}
+                onClick={() => setShowCreate(true)}
               >
                 <Plus size={17} />
                 New ticket
@@ -700,477 +944,514 @@ export default function App() {
 
           {error && (
             <div className="alert-banner alert-error">
-              <AlertCircle size={19} />
-              <div>
-                <strong>Backend connection problem</strong>
-                <p>{error}</p>
-              </div>
-
+              <AlertCircle size={18} />
+              <span>{error}</span>
               <button
-                type="button"
                 className="icon-button"
-                aria-label="Dismiss error"
                 onClick={() => setError("")}
+                aria-label="Dismiss error"
               >
-                <X size={18} />
+                <X size={17} />
               </button>
             </div>
           )}
 
-          {success && (
+          {notice && (
             <div className="alert-banner alert-success">
               <CheckCircle2 size={18} />
-              <span>{success}</span>
+              <span>{notice}</span>
               <button
-                type="button"
                 className="icon-button"
-                aria-label="Dismiss message"
-                onClick={() => setSuccess("")}
+                onClick={() => setNotice("")}
+                aria-label="Dismiss notification"
               >
-                <X size={18} />
+                <X size={17} />
               </button>
             </div>
           )}
 
-          <section className="stats-grid">
-            <StatCard
-              label="Total tickets"
-              value={loading ? "—" : stats?.total_tickets ?? tickets.length}
-              icon={MessageSquare}
-              color="icon-purple"
-              description="All recorded tickets"
-              trendIcon={TrendingUp}
-            />
+          {activePage === "overview" && (
+            <>
+              <section className="app-metrics-grid">
+                <Metric
+                  label="Total tickets"
+                  value={loading ? "—" : totalCount}
+                  detail="All recorded customer requests"
+                  icon={MessageSquare}
+                />
+                <Metric
+                  label="Awaiting resolution"
+                  value={loading ? "—" : stats?.open_tickets ?? openCount}
+                  detail="Currently open"
+                  icon={Clock3}
+                />
+                <Metric
+                  label="Resolved"
+                  value={loading ? "—" : stats?.closed_tickets ?? closedCount}
+                  detail="Successfully closed"
+                  icon={CheckCircle2}
+                />
+                <Metric
+                  label="High priority"
+                  value={loading ? "—" : highCount}
+                  detail="Open and need attention"
+                  icon={AlertCircle}
+                />
+              </section>
 
-            <StatCard
-              label="Open tickets"
-              value={loading ? "—" : stats?.open_tickets ?? openTickets}
-              icon={Clock3}
-              color="icon-blue"
-              description="Awaiting resolution"
-              trendIcon={ArrowUpRight}
-            />
-
-            <StatCard
-              label="Resolved tickets"
-              value={loading ? "—" : stats?.closed_tickets ?? closedTickets}
-              icon={CheckCircle2}
-              color="icon-green"
-              description="Successfully closed"
-              trendIcon={ArrowDownRight}
-            />
-
-            <StatCard
-              label="High priority"
-              value={loading ? "—" : highPriorityTickets}
-              icon={AlertCircle}
-              color="icon-orange"
-              description="Open and need attention"
-              trendIcon={ArrowUpRight}
-            />
-          </section>
-
-          <section className="charts-grid">
-            <article className="panel chart-panel">
-              <div className="panel-heading">
-                <div>
-                  <h2>Ticket priorities</h2>
-                  <p>Distribution across priority levels</p>
-                </div>
-
-                <span className="panel-icon">
-                  <BarChart3 size={18} />
-                </span>
-              </div>
-
-              <div className="priority-chart">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={priorityData}
-                    margin={{ top: 12, right: 10, left: -20, bottom: 0 }}
-                  >
-                    <CartesianGrid
-                      strokeDasharray="3 5"
-                      vertical={false}
-                      stroke="#edf0f5"
-                    />
-
-                    <XAxis
-                      dataKey="name"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: "#7d8798", fontSize: 12 }}
-                      dy={8}
-                    />
-
-                    <YAxis
-                      allowDecimals={false}
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: "#7d8798", fontSize: 12 }}
-                    />
-
-                    <Tooltip
-                      cursor={{ fill: "#f7f8fc" }}
-                      contentStyle={{
-                        border: "1px solid #e9edf4",
-                        borderRadius: 12,
-                        fontSize: 12,
-                      }}
-                    />
-
-                    <Bar dataKey="tickets" radius={[6, 6, 0, 0]} maxBarSize={52}>
-                      {priorityData.map((item) => (
-                        <Cell key={item.name} fill={item.color} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="chart-legend">
-                {priorityData.map((item) => (
-                  <div key={item.name} className="legend-item">
-                    <span
-                      className="legend-dot"
-                      style={{ backgroundColor: item.color }}
-                    />
-                    <span>{item.name}</span>
-                    <strong>{item.tickets}</strong>
+              <section className="charts-grid app-charts-grid">
+                <article className="panel chart-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <h2>Priority distribution</h2>
+                      <p>Tickets grouped by urgency</p>
+                    </div>
+                    <BarChart3 size={19} />
                   </div>
-                ))}
-              </div>
-            </article>
 
-            <article className="panel chart-panel">
-              <div className="panel-heading">
-                <div>
-                  <h2>Tickets by category</h2>
-                  <p>Understand your support workload</p>
-                </div>
-
-                <span className="panel-icon">
-                  <Activity size={18} />
-                </span>
-              </div>
-
-              {categoryData.length > 0 ? (
-                <div className="category-chart-layout">
-                  <div className="category-pie">
+                  <div className="priority-chart">
                     <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={categoryData}
-                          dataKey="value"
-                          nameKey="name"
-                          innerRadius="62%"
-                          outerRadius="88%"
-                          paddingAngle={3}
-                          stroke="none"
-                        >
-                          {categoryData.map((item, index) => (
-                            <Cell
-                              key={item.name}
-                              fill={[
-                                "#7566df",
-                                "#48a5e7",
-                                "#43b99b",
-                                "#efb253",
-                                "#ec7d8b",
-                                "#9ba8bc",
-                              ][index % 6]}
-                            />
-                          ))}
-                        </Pie>
-
-                        <Tooltip
-                          contentStyle={{
-                            border: "1px solid #e9edf4",
-                            borderRadius: 12,
-                            fontSize: 12,
-                          }}
+                      <BarChart data={priorityData}>
+                        <CartesianGrid
+                          strokeDasharray="3 5"
+                          vertical={false}
+                          stroke="#e6e8e1"
                         />
-                      </PieChart>
+                        <XAxis
+                          dataKey="name"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#70776f", fontSize: 12 }}
+                        />
+                        <YAxis
+                          allowDecimals={false}
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fill: "#70776f", fontSize: 12 }}
+                        />
+                        <Tooltip />
+                        <Bar
+                          dataKey="tickets"
+                          name="Tickets"
+                          radius={[4, 4, 0, 0]}
+                          maxBarSize={48}
+                        >
+                          {priorityData.map((item) => (
+                            <Cell key={item.name} fill={item.color} />
+                          ))}
+                        </Bar>
+                      </BarChart>
                     </ResponsiveContainer>
                   </div>
+                </article>
 
-                  <div className="category-legend">
-                    {categoryData.slice(0, 6).map((item, index) => (
-                      <div key={item.name} className="category-legend-item">
+                <article className="panel chart-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <h2>Ticket categories</h2>
+                      <p>Distribution across support areas</p>
+                    </div>
+                    <Activity size={19} />
+                  </div>
+
+                  {categoryData.length > 0 ? (
+                    <div className="category-chart-layout">
+                      <div className="category-pie">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={categoryData}
+                              dataKey="value"
+                              nameKey="name"
+                              innerRadius="62%"
+                              outerRadius="88%"
+                              paddingAngle={3}
+                            >
+                              {categoryData.map((item, index) => (
+                                <Cell
+                                  key={item.name}
+                                  fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
+                                />
+                              ))}
+                            </Pie>
+                            <Tooltip />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="category-legend">
+                        {categoryData.map((item, index) => (
+                          <div key={item.name} className="category-legend-item">
+                            <span
+                              className="legend-dot"
+                              style={{
+                                backgroundColor:
+                                  CATEGORY_COLORS[index % CATEGORY_COLORS.length],
+                              }}
+                            />
+                            <span className="category-name">{item.name}</span>
+                            <strong>{item.value}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="empty-chart">
+                      <BarChart3 size={25} />
+                      <strong>No category data yet</strong>
+                      <p>Create tickets to populate this chart.</p>
+                    </div>
+                  )}
+                </article>
+              </section>
+
+              <section className="panel tickets-panel">
+                <div className="tickets-heading">
+                  <div>
+                    <h2>Recent tickets</h2>
+                    <p>The latest customer requests in your workspace.</p>
+                  </div>
+                  <button
+                    className="text-button"
+                    onClick={() => navigate("tickets")}
+                  >
+                    View all <ChevronRight size={15} />
+                  </button>
+                </div>
+
+                <TicketTable
+                  tickets={filteredTickets.slice(0, 5)}
+                  loading={loading}
+                  search={search}
+                  setSearch={setSearch}
+                  statusFilter={statusFilter}
+                  setStatusFilter={setStatusFilter}
+                  priorityFilter={priorityFilter}
+                  setPriorityFilter={setPriorityFilter}
+                  categoryFilter={categoryFilter}
+                  setCategoryFilter={setCategoryFilter}
+                  onSelect={setSelectedTicket}
+                  onResolve={resolveTicket}
+                  resolvingId={resolvingId}
+                  onCreate={() => setShowCreate(true)}
+                  showFilters={false}
+                />
+              </section>
+            </>
+          )}
+
+          {(activePage === "tickets" ||
+            activePage === "open" ||
+            activePage === "resolved") && (
+              <section className="panel tickets-panel app-full-ticket-panel">
+                <div className="tickets-heading">
+                  <div>
+                    <h2>{pageInfo.title}</h2>
+                    <p>
+                      {filteredTickets.length} matching ticket
+                      {filteredTickets.length === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <button
+                    className="button button-secondary"
+                    onClick={refresh}
+                    disabled={refreshing}
+                  >
+                    <RefreshCw
+                      size={15}
+                      className={refreshing ? "spin" : ""}
+                    />
+                    Refresh
+                  </button>
+                </div>
+
+                <TicketTable
+                  tickets={filteredTickets}
+                  loading={loading}
+                  search={search}
+                  setSearch={setSearch}
+                  statusFilter={statusFilter}
+                  setStatusFilter={setStatusFilter}
+                  priorityFilter={priorityFilter}
+                  setPriorityFilter={setPriorityFilter}
+                  categoryFilter={categoryFilter}
+                  setCategoryFilter={setCategoryFilter}
+                  onSelect={setSelectedTicket}
+                  onResolve={resolveTicket}
+                  resolvingId={resolvingId}
+                  onCreate={() => setShowCreate(true)}
+                />
+
+                <div className="table-footer">
+                  <span>
+                    Showing <strong>{filteredTickets.length}</strong> of{" "}
+                    <strong>{tickets.length}</strong> tickets
+                  </span>
+                </div>
+              </section>
+            )}
+
+          {activePage === "analytics" && (
+            <>
+              <section className="app-metrics-grid">
+                <Metric
+                  label="Total volume"
+                  value={loading ? "—" : totalCount}
+                  detail="All tickets in the database"
+                  icon={Ticket}
+                />
+                <Metric
+                  label="Open workload"
+                  value={loading ? "—" : openCount}
+                  detail="Tickets still being handled"
+                  icon={Clock3}
+                />
+                <Metric
+                  label="Resolved"
+                  value={loading ? "—" : closedCount}
+                  detail="Tickets marked as closed"
+                  icon={CheckCircle2}
+                />
+                <Metric
+                  label="Resolution share"
+                  value={totalCount ? `${Math.round((closedCount / totalCount) * 100)}% ` : "—"}
+                  detail="Resolved tickets / total tickets"
+                  icon={Activity}
+                />
+              </section>
+
+              <section className="charts-grid app-charts-grid">
+                <article className="panel chart-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <h2>Priority analysis</h2>
+                      <p>Number of tickets by assigned priority</p>
+                    </div>
+                  </div>
+                  <div className="priority-chart">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={priorityData}>
+                        <CartesianGrid
+                          strokeDasharray="3 5"
+                          vertical={false}
+                          stroke="#e6e8e1"
+                        />
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} />
+                        <YAxis allowDecimals={false} axisLine={false} tickLine={false} />
+                        <Tooltip />
+                        <Bar dataKey="tickets" name="Tickets" radius={[4, 4, 0, 0]}>
+                          {priorityData.map((item) => (
+                            <Cell key={item.name} fill={item.color} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </article>
+
+                <article className="panel chart-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <h2>Category analysis</h2>
+                      <p>Recorded tickets by category</p>
+                    </div>
+                  </div>
+                  {categoryData.length ? (
+                    <div className="category-chart-layout">
+                      <div className="category-pie">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={categoryData}
+                              dataKey="value"
+                              nameKey="name"
+                              innerRadius="60%"
+                              outerRadius="86%"
+                              paddingAngle={3}
+                            >
+                              {categoryData.map((item, index) => (
+                                <Cell
+                                  key={item.name}
+                                  fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
+                                />
+                              ))}
+                            </Pie>
+                            <Tooltip />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="category-legend">
+                        {categoryData.map((item, index) => (
+                          <div key={item.name} className="category-legend-item">
+                            <span
+                              className="legend-dot"
+                              style={{
+                                backgroundColor:
+                                  CATEGORY_COLORS[index % CATEGORY_COLORS.length],
+                              }}
+                            />
+                            <span className="category-name">{item.name}</span>
+                            <strong>{item.value}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="empty-chart">
+                      <strong>No category data available</strong>
+                      <p>Category data will appear when tickets exist.</p>
+                    </div>
+                  )}
+                </article>
+              </section>
+
+              <section className="panel tickets-panel">
+                <div className="tickets-heading">
+                  <div>
+                    <h2>Workload by category</h2>
+                    <p>Counts returned by the dashboard statistics endpoint.</p>
+                  </div>
+                </div>
+                {categoryData.length ? (
+                  <div className="app-category-list">
+                    {categoryData.map((item, index) => (
+                      <div className="app-category-row" key={item.name}>
                         <span
                           className="legend-dot"
                           style={{
-                            backgroundColor: [
-                              "#7566df",
-                              "#48a5e7",
-                              "#43b99b",
-                              "#efb253",
-                              "#ec7d8b",
-                              "#9ba8bc",
-                            ][index % 6],
+                            backgroundColor:
+                              CATEGORY_COLORS[index % CATEGORY_COLORS.length],
                           }}
                         />
-
-                        <span className="category-name">{item.name}</span>
+                        <span>{item.name}</span>
+                        <div className="app-category-track">
+                          <span
+                            style={{
+                              width: `${totalCount ? (item.value / totalCount) * 100 : 0}% `,
+                              backgroundColor:
+                                CATEGORY_COLORS[index % CATEGORY_COLORS.length],
+                            }}
+                          />
+                        </div>
                         <strong>{item.value}</strong>
                       </div>
                     ))}
                   </div>
-                </div>
-              ) : (
-                <div className="empty-chart">
-                  <div className="empty-chart-icon">
-                    <BarChart3 size={25} />
+                ) : (
+                  <div className="empty-chart">
+                    <p>No category statistics have been returned by the backend.</p>
                   </div>
-                  <strong>No category data yet</strong>
-                  <p>Create tickets to see the category breakdown.</p>
-                </div>
-              )}
-            </article>
-          </section>
-
-          <section className="panel tickets-panel">
-            <div className="tickets-heading">
-              <div>
-                <div className="tickets-title-line">
-                  <h2>
-                    {activePage === "open"
-                      ? "Open tickets"
-                      : activePage === "resolved"
-                        ? "Resolved tickets"
-                        : "Recent tickets"}
-                  </h2>
-
-                  <span className="ticket-total">{filteredTickets.length}</span>
-                </div>
-
-                <p>Manage customer requests and track their progress.</p>
-              </div>
-
-              <button
-                type="button"
-                className="text-button"
-                onClick={() => navigate("tickets")}
-              >
-                View all tickets <ArrowUpRight size={15} />
-              </button>
-            </div>
-
-            <div className="ticket-toolbar">
-              <div className="search-box">
-                <Search size={17} />
-
-                <input
-                  type="search"
-                  placeholder="Search tickets, IDs or descriptions..."
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
-
-                {search && (
-                  <button
-                    type="button"
-                    className="search-clear"
-                    aria-label="Clear search"
-                    onClick={() => setSearch("")}
-                  >
-                    <X size={15} />
-                  </button>
                 )}
+              </section>
+            </>
+          )}
+
+          {activePage === "settings" && (
+            <section className="panel app-settings-panel">
+              <div className="tickets-heading">
+                <div>
+                  <h2>Workspace preferences</h2>
+                  <p>Manage how the SupportIQ interface appears on this device.</p>
+                </div>
+                <Settings size={21} />
               </div>
 
-              <div className="filter-group">
-                <SlidersHorizontal size={16} className="filter-icon" />
-
-                <select
-                  aria-label="Filter by status"
-                  value={statusFilter}
-                  onChange={(event) => setStatusFilter(event.target.value)}
+              <div className="app-setting-row">
+                <div>
+                  <strong>Compact interface</strong>
+                  <p>Reduce spacing to display more information on screen.</p>
+                </div>
+                <button
+                  type="button"
+                  className={`app-toggle ${compactMode ? "app-toggle-on" : ""}`}
+                  aria-pressed={compactMode}
+                  onClick={() => setCompactMode((value) => !value)}
                 >
-                  <option value="all">All statuses</option>
-                  <option value="open">Open</option>
-                  <option value="closed">Closed</option>
-                </select>
-
-                <select
-                  aria-label="Filter by priority"
-                  value={priorityFilter}
-                  onChange={(event) => setPriorityFilter(event.target.value)}
-                >
-                  <option value="all">All priorities</option>
-                  <option value="high">High priority</option>
-                  <option value="medium">Medium priority</option>
-                  <option value="low">Low priority</option>
-                </select>
-
-                <select
-                  aria-label="Filter by category"
-                  value={categoryFilter}
-                  onChange={(event) => setCategoryFilter(event.target.value)}
-                >
-                  <option value="all">All categories</option>
-                  {CATEGORY_OPTIONS.map((category) => (
-                    <option key={category} value={category}>
-                      {category}
-                    </option>
-                  ))}
-                </select>
+                  <span />
+                </button>
               </div>
-            </div>
 
-            <div className="table-wrapper">
-              <table className="tickets-table">
-                <thead>
-                  <tr>
-                    <th>TICKET</th>
-                    <th>CATEGORY</th>
-                    <th>PRIORITY</th>
-                    <th>STATUS</th>
-                    <th>CREATED</th>
-                    <th>ACTION</th>
-                  </tr>
-                </thead>
+              <div className="app-setting-row">
+                <div>
+                  <strong>Ticket descriptions</strong>
+                  <p>Show or hide description previews in the ticket list.</p>
+                </div>
+                <button
+                  type="button"
+                  className={`app-toggle ${showDescriptions ? "app-toggle-on" : ""}`}
+                  aria-pressed={showDescriptions}
+                  onClick={() => {
+                    setShowDescriptions((value) => !value);
+                    document.body.classList.toggle(
+                      "hide-ticket-descriptions",
+                      showDescriptions
+                    );
+                  }}
+                >
+                  <span />
+                </button>
+              </div>
 
-                <tbody>
-                  {loading ? (
-                    <tr>
-                      <td colSpan="6" className="table-message">
-                        <LoaderCircle size={22} className="spin" />
-                        <span>Loading tickets...</span>
-                      </td>
-                    </tr>
-                  ) : filteredTickets.length === 0 ? (
-                    <tr>
-                      <td colSpan="6" className="table-message">
-                        <div className="empty-table-icon">
-                          <Search size={22} />
-                        </div>
+              <div className="app-setting-row">
+                <div>
+                  <strong>Backend connection</strong>
+                  <p>API endpoint: http://127.0.0.1:8000</p>
+                </div>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={async () => {
+                    try {
+                      await api.health();
+                      setNotice("Backend health check succeeded.");
+                    } catch {
+                      setError("The backend health check failed.");
+                    }
+                  }}
+                >
+                  <Activity size={15} />
+                  Test connection
+                </button>
+              </div>
 
-                        <strong>No tickets found</strong>
-
-                        <span>
-                          Try another filter or create a new customer ticket.
-                        </span>
-
-                        <button
-                          type="button"
-                          className="button button-primary empty-create-button"
-                          onClick={() => setShowModal(true)}
-                        >
-                          <Plus size={16} /> Create ticket
-                        </button>
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredTickets.map((ticket) => (
-                      <tr key={ticket.id}>
-                        <td>
-                          <div className="ticket-cell">
-                            <div className="ticket-cell-icon">
-                              <MessageSquare size={17} />
-                            </div>
-
-                            <div className="ticket-cell-copy">
-                              <strong>{ticket.title}</strong>
-                              <span>
-                                #{ticket.id} ·{" "}
-                                {(ticket.description || "").length > 55
-                                  ? `${ticket.description.slice(0, 55)}…`
-                                  : ticket.description}
-                              </span>
-                            </div>
-                          </div>
-                        </td>
-
-                        <td>
-                          <span className="category-tag">
-                            {ticket.category || "Uncategorized"}
-                          </span>
-                        </td>
-
-                        <td>
-                          <PriorityBadge priority={ticket.priority} />
-                        </td>
-
-                        <td>
-                          <StatusBadge status={ticket.status} />
-                        </td>
-
-                        <td className="date-cell">
-                          {formatDate(ticket.created_at)}
-                        </td>
-
-                        <td>
-                          {ticket.status === "open" ? (
-                            <button
-                              type="button"
-                              className="close-ticket-button"
-                              disabled={closingId === ticket.id}
-                              onClick={() => handleCloseTicket(ticket.id)}
-                            >
-                              {closingId === ticket.id ? (
-                                <LoaderCircle size={15} className="spin" />
-                              ) : (
-                                <CheckCircle2 size={15} />
-                              )}
-                              Close
-                            </button>
-                          ) : (
-                            <span className="completed-action">
-                              <CheckCircle2 size={16} />
-                              Done
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="table-footer">
-              <span>
-                Showing <strong>{filteredTickets.length}</strong> of{" "}
-                <strong>{tickets.length}</strong> tickets
-              </span>
-
-              <button
-                type="button"
-                className="button button-secondary small-refresh"
-                onClick={() => {
-                  setRefreshing(true);
-                  loadData(false);
-                }}
-                disabled={refreshing}
-              >
-                <RefreshCw
-                  size={14}
-                  className={refreshing ? "spin" : ""}
-                />
-                Refresh data
-              </button>
-            </div>
-          </section>
+              <div className="app-settings-note">
+                <ShieldCheck size={19} />
+                <div>
+                  <strong>Local workspace</strong>
+                  <p>
+                    These interface preferences are temporary and will reset
+                    when the page is reloaded. Persistent user accounts and
+                    server-side settings have not been configured.
+                  </p>
+                </div>
+              </div>
+            </section>
+          )}
 
           <footer className="page-footer">
             <span>
               <span className="footer-status-dot" />
-              SupportIQ is running
+              {error ? "Backend connection needs attention" : "SupportIQ workspace"}
             </span>
-
-            <span>Customer Support Intelligence Platform</span>
-
-            <span>v1.0.0</span>
+            <span>Customer Support Operations</span>
+            <span>v1.1.0</span>
           </footer>
         </div>
       </main>
 
-      {showModal && (
-        <TicketModal
-          onClose={() => setShowModal(false)}
-          onCreate={handleCreateTicket}
+      {showCreate && (
+        <TicketForm
+          onClose={() => setShowCreate(false)}
+          onCreate={createTicket}
           submitting={submitting}
+        />
+      )}
+
+      {selectedTicket && (
+        <TicketDetails
+          ticket={selectedTicket}
+          onClose={() => setSelectedTicket(null)}
+          onResolve={resolveTicket}
+          resolving={resolvingId === selectedTicket.id}
         />
       )}
     </div>

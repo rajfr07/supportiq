@@ -1,3 +1,6 @@
+from pydantic import BaseModel, Field
+
+from app.classifier import classify_ticket
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timezone
 from typing import Literal
@@ -12,6 +15,10 @@ from app.schemas import TicketCreate, TicketOut
 
 
 Base.metadata.create_all(bind=engine)
+
+class ClassificationRequest(BaseModel):
+    title: str = Field(min_length=3, max_length=200)
+    description: str = Field(min_length=1)
 
 app = FastAPI(title="SupportIQ API")
 app.add_middleware(
@@ -40,14 +47,45 @@ def get_db():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+from pydantic import BaseModel, Field
+from app.classifier import classify_ticket
 
+
+class ClassificationRequest(BaseModel):
+    title: str = Field(min_length=3, max_length=200)
+    description: str = Field(min_length=1)
+
+
+@app.post("/ai/classify")
+def predict_ticket_category(request: ClassificationRequest):
+    return classify_ticket(
+        request.title,
+        request.description,
+    )
+
+@app.post("/ai/classify")
+def predict_ticket_category(request: ClassificationRequest):
+    return classify_ticket(
+        request.title,
+        request.description,
+    )
 
 @app.post("/tickets", response_model=TicketOut, status_code=201)
 def create_ticket(
     ticket: TicketCreate,
     db: Session = Depends(get_db)
 ):
-    new_ticket = models.Ticket(**ticket.model_dump())
+    ticket_data = ticket.model_dump()
+
+    if not ticket_data.get("category"):
+        prediction = classify_ticket(
+            ticket_data["title"],
+            ticket_data["description"],
+        )
+
+        ticket_data["category"] = prediction["category"]
+
+    new_ticket = models.Ticket(**ticket_data)
 
     db.add(new_ticket)
     db.commit()
