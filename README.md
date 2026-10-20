@@ -8,6 +8,16 @@ The system helps support teams organize customer issues, automatically
 categorize incoming tickets, monitor ticket status, and understand support
 workloads through dashboard analytics.
 
+## 🚀 Live Demo
+
+- **Live Application:** https://supportiq-plum.vercel.app/
+- **Backend API:** https://supportiq-api-4w9t.onrender.com/
+- **API Documentation:** https://supportiq-api-4w9t.onrender.com/docs
+- **Health Check:** https://supportiq-api-4w9t.onrender.com/health
+
+Explore the deployed application to create, search, filter,
+and manage customer support tickets.
+
 ## Features
 
 ### Ticket Management
@@ -114,3 +124,13 @@ supportiq/
 │   └── package.json
 │
 └── README.md
+
+## 📸 Screenshots
+
+### Dashboard and Analytics
+
+![SupportIQ Dashboard](screenshots/dashboard.png)
+
+### Ticket Management
+
+![SupportIQ Ticket Management](screenshots/tickets.png)
