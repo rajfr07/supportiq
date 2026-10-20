@@ -22,6 +22,16 @@ class ClassificationRequest(BaseModel):
 
 app = FastAPI(title="SupportIQ API")
 
+@app.get("/")
+def root():
+    return {
+        "message": "Welcome to SupportIQ API",
+        "project": "SupportIQ",
+        "status": "online",
+        "documentation": "/docs",
+        "health_check": "/health"
+    }
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
