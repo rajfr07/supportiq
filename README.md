@@ -99,7 +99,7 @@ evaluation.
 
 ## Project Structure
 
-```text
+text
 supportiq/
 ├── backend/
 │   ├── app/
